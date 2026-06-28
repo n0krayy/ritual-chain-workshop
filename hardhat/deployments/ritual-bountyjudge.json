@@ -1,0 +1,15 @@
+{
+  "contractName": "BountyJudge",
+  "address": "0x6b2c16e11e9b5509b9335921f7af02e58c899021",
+  "deployTxHash": "0x320f9396fc5b3a0e83aedef99c3671c52f9bdd470f78194f23f0da8b55d0ffdd",
+  "blockNumber": 38656891,
+  "gasUsed": 1516484,
+  "deployer": "0xdC124328B621243422661BdfF50152d7F5f60efa",
+  "network": {
+    "name": "ritual",
+    "chainId": 1979,
+    "rpc": "https://rpc.ritualfoundation.org",
+    "explorer": "https://explorer.ritualfoundation.org/"
+  },
+  "deployedAt": "2026-06-28T10:00:00Z"
+}

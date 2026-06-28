@@ -109,26 +109,32 @@ npx hardhat build && npx tsc --noEmit
 
 ### Deploy to Ritual (chainId 1979)
 
-Set the deployer key:
+The recommended path is Hardhat Ignition:
 
 ```bash
 npx hardhat keystore set DEPLOYER_PRIVATE_KEY
-```
-
-Then deploy:
-
-```bash
 npx hardhat ignition deploy --network ritual \
   ignition/modules/BountyJudge.ts
 ```
 
-Optionally create a sample bounty in the same deployment:
+For non-interactive deploys (CI / scripted), use the Viem-based
+fallback script:
 
 ```bash
-CREATE_SAMPLE_BOUNTY=1 SAMPLE_BOUNTY_REWARD=10000000000000000 \
-npx hardhat ignition deploy --network ritual \
-  ignition/modules/BountyJudge.ts
+DEPLOYER_PRIVATE_KEY=0x... node scripts/deploy-direct.mjs
 ```
+
+### Live deployment (homework submission)
+
+| Field | Value |
+|---|---|
+| Contract address | `0x6b2c16e11e9b5509b9335921f7af02e58c899021` |
+| Deploy tx hash | `0x320f9396fc5b3a0e83aedef99c3671c52f9bdd470f78194f23f0da8b55d0ffdd` |
+| Block | `38656891` |
+| Gas used | `1,516,484` |
+| Network | Ritual (chainId 1979) |
+| RPC | `https://rpc.ritualfoundation.org` |
+| Explorer | `https://explorer.ritualfoundation.org/address/0x6b2c16e11e9b5509b9335921f7af02e58c899021` |
 
 ## Commit-reveal commitment formula
 
