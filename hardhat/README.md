@@ -1,57 +1,166 @@
-# Sample Hardhat 3 Project (`node:test` and `viem`)
+# AI Bounty Judge — Privacy-Preserving Homework
 
-This project showcases a Hardhat 3 project using the native Node.js test runner (`node:test`) and the `viem` library for Ethereum interactions.
+This directory extends the Ritual workshop's `AIJudge` starter into a
+**privacy-preserving** bounty judge using a **commit-reveal** submission
+flow. Late participants can no longer read earlier answers and copy them
+before judging.
 
-To learn more about Hardhat 3, please visit the [Getting Started guide](https://hardhat.org/docs/getting-started#getting-started-with-hardhat-3). To share your feedback, join our [Hardhat 3](https://hardhat.org/hardhat3-telegram-group) Telegram group or [open an issue](https://github.com/NomicFoundation/hardhat/issues/new) in our GitHub issue tracker.
+## What was built
 
-## Project Overview
+- **`contracts/BountyJudge.sol`** — single contract implementing the
+  commit-reveal flow plus the original `judgeAll` Ritual LLM precompile
+  integration. Submission phase only stores a keccak256 commitment;
+  plaintext answers are revealed only after the submission deadline.
+- **`test/BountyJudge.t.sol`** — 24 Solidity unit tests covering create,
+  commit, reveal (valid + 6 invalid variants), deadline enforcement,
+  replay protection, phase transitions, and access control.
+- **`ignition/modules/BountyJudge.ts`** — Hardhat Ignition deploy module.
+- **`docs/ARCHITECTURE.md`** — design notes comparing commit-reveal
+  (this implementation) with Ritual-native TEE/encrypted judging.
+- **`docs/ADVANCED_TRACK.md`** — design document for the Ritual TEE flow.
+- **`docs/REFLECTION.md`** — reflection on public/hidden/AI/human
+  boundaries in bounty systems.
 
-This example project includes:
+## Bounty lifecycle
 
-- A simple Hardhat configuration file.
-- Foundry-compatible Solidity unit tests.
-- TypeScript integration tests using [`node:test`](nodejs.org/api/test.html), the new Node.js native test runner, and [`viem`](https://viem.sh/).
-- Examples demonstrating how to connect to different types of networks, including locally simulating OP mainnet.
-
-## Usage
-
-### Running Tests
-
-To run all the tests in the project, execute the following command:
-
-```shell
-npx hardhat test
+```
+                ┌───────────────────────┐
+                │  Owner creates bounty │   msg.value = reward
+                │  (title, rubric,      │   submissionDeadline
+                │   submissionDeadline, │   revealDeadline
+                │   revealDeadline)     │
+                └──────────┬────────────┘
+                           │
+                           ▼
+        ┌──────────────────────────────────────┐
+        │  Phase: Submission                   │
+        │  Each participant calls              │
+        │    submitCommitment(bountyId, hash)  │
+        │  where                               │
+        │    hash = keccak256(                 │
+        │      abi.encodePacked(               │
+        │        answer, salt, msg.sender,     │
+        │        bountyId))                    │
+        │  One commitment per address.         │
+        │  Plaintext answer stays off-chain.   │
+        └──────────────────┬───────────────────┘
+                           │  block.timestamp ≥ submissionDeadline
+                           ▼
+        ┌──────────────────────────────────────┐
+        │  Phase: Reveal                       │
+        │  Each participant calls              │
+        │    revealAnswer(bountyId, answer,    │
+        │                  salt)               │
+        │  Contract recomputes hash, verifies  │
+        │  it matches the commitment.          │
+        │  Only valid reveals are eligible.    │
+        └──────────────────┬───────────────────┘
+                           │  block.timestamp ≥ revealDeadline
+                           ▼
+        ┌──────────────────────────────────────┐
+        │  Phase: Judging                      │
+        │  Owner builds a batched LLM input    │
+        │  from all eligible revealed answers  │
+        │  and calls                           │
+        │    judgeAll(bountyId, llmInput,      │
+        │             rankingHash)             │
+        │  Contract invokes the Ritual LLM     │
+        │  precompile, stores completion +     │
+        │  ranking hash.                       │
+        └──────────────────┬───────────────────┘
+                           │
+                           ▼
+        ┌──────────────────────────────────────┐
+        │  Phase: Finalized                    │
+        │  Owner calls                         │
+        │    finalizeWinner(bountyId, idx,     │
+        │                    answersRef,       │
+        │                    answersHash)      │
+        │  Winner pulls their reward via       │
+        │    claimReward(bountyId)             │
+        └──────────────────────────────────────┘
 ```
 
-You can also selectively run the Solidity or `node:test` tests:
+## Quick start
 
-```shell
+### Install
+
+```bash
+npm install
+```
+
+### Build
+
+```bash
+npx hardhat build
+```
+
+### Run tests
+
+```bash
 npx hardhat test solidity
-npx hardhat test nodejs
 ```
 
-### Make a deployment to Sepolia
+### Typecheck
 
-This project includes an example Ignition module to deploy the contract. You can deploy this module to a locally simulated chain or to Sepolia.
-
-To run the deployment to a local chain:
-
-```shell
-npx hardhat ignition deploy ignition/modules/Counter.ts
+```bash
+npx hardhat build && npx tsc --noEmit
 ```
 
-To run the deployment to Sepolia, you need an account with funds to send the transaction. The provided Hardhat configuration includes a Configuration Variable called `SEPOLIA_PRIVATE_KEY`, which you can use to set the private key of the account you want to use.
+### Deploy to Ritual (chainId 1979)
 
-You can set the `SEPOLIA_PRIVATE_KEY` variable using the `hardhat-keystore` plugin or by setting it as an environment variable.
+Set the deployer key:
 
-To set the `SEPOLIA_PRIVATE_KEY` config variable using `hardhat-keystore`:
-
-```shell
-npx hardhat keystore set SEPOLIA_PRIVATE_KEY
+```bash
+npx hardhat keystore set DEPLOYER_PRIVATE_KEY
 ```
 
-After setting the variable, you can run the deployment with the Sepolia network:
+Then deploy:
 
-```shell
-npx hardhat ignition deploy --network sepolia ignition/modules/Counter.ts
+```bash
+npx hardhat ignition deploy --network ritual \
+  ignition/modules/BountyJudge.ts
 ```
+
+Optionally create a sample bounty in the same deployment:
+
+```bash
+CREATE_SAMPLE_BOUNTY=1 SAMPLE_BOUNTY_REWARD=10000000000000000 \
+npx hardhat ignition deploy --network ritual \
+  ignition/modules/BountyJudge.ts
+```
+
+## Commit-reveal commitment formula
+
+```solidity
+bytes32 commitment = keccak256(
+  abi.encodePacked(answer, salt, msg.sender, bountyId)
+);
+```
+
+`msg.sender` and `bountyId` are part of the hash so a participant cannot
+copy someone else's commitment and reveal it themselves.
+
+## Security properties
+
+- **Late copy protection** — plaintext answers are not on-chain until the
+  reveal phase, so later participants gain no information advantage by
+  reading earlier submissions.
+- **One commitment per address per bounty** — enforced via
+  `submitterToIndex` mapping.
+- **Deadline enforcement** — submissions / reveals are gated by the
+  current phase (`Submission`, `Reveal`, `Judging`).
+- **Pull-pattern payout** — `claimReward()` lets the winner pay gas when
+  they want, avoiding re-entrancy risks in `finalizeWinner`.
+- **Off-chain answers bundle** — final reveal publishes
+  `revealedAnswersRef` (off-chain pointer) and `revealedAnswersHash`
+  on-chain, so the bundle can be cross-checked.
+
+## Further reading
+
+- [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) — commit-reveal vs
+  Ritual-native comparison.
+- [`docs/ADVANCED_TRACK.md`](./docs/ADVANCED_TRACK.md) — design doc for
+  TEE-based encrypted judging.
+- [`docs/REFLECTION.md`](./docs/REFLECTION.md) — public/hidden/AI/human
+  boundaries.
